@@ -16,7 +16,7 @@ import { ServiceContext } from "@dainprotocol/service-sdk/service";
 import { ServicePinnable } from "@dainprotocol/service-sdk/service";
 
 // Store weather search history in a JSON file
-const HISTORY_FILE = path.join(__dirname, "weatherHistory.json");
+const HISTORY_FILE = path.join(__dirname, "..", "..", "weatherHistory.json");
 
 // Initialize history from file or create empty if doesn't exist
 let weatherSearchHistory: Record<string, Array<{
