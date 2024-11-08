@@ -8,8 +8,19 @@ import {
   ToolConfig,
   ServiceConfig,
   ToolboxConfig,
-  ServiceContext,
 } from "@dainprotocol/service-sdk";
+
+import { ServiceContext } from "@dainprotocol/service-sdk/service";
+import { ServicePinnable } from "@dainprotocol/service-sdk/service";
+
+// Simple in-memory store for weather search history -- could use a database in the future to store the history
+const weatherSearchHistory: Record<string, Array<{
+  timestamp: number,
+  latitude: number,
+  longitude: number,
+  temperature: number,
+  windSpeed: number
+}>> = {};
 
 const getWeatherConfig: ToolConfig = {
   id: "get-weather",
@@ -39,6 +50,18 @@ const getWeatherConfig: ToolConfig = {
 
     const { temperature_2m, wind_speed_10m } = response.data.current;
 
+    // Store the search in history
+    if (!weatherSearchHistory[agentInfo.id]) {
+      weatherSearchHistory[agentInfo.id] = [];
+    }
+    weatherSearchHistory[agentInfo.id].push({
+      timestamp: Date.now(),
+      latitude,
+      longitude, 
+      temperature: temperature_2m,
+      windSpeed: wind_speed_10m
+    });
+
     return {
       text: `The current temperature is ${temperature_2m}°C with wind speed of ${wind_speed_10m} km/h`,
       data: {
@@ -52,7 +75,7 @@ const getWeatherConfig: ToolConfig = {
 
 const getWeatherForecastConfig: ToolConfig = {
   id: "get-weather-forecast",
-  name: "Get Weather Forecast",
+  name: "Get Weather Forecast", 
   description: "Fetches hourly weather forecast",
   input: z
     .object({
@@ -98,6 +121,92 @@ const getWeatherForecastConfig: ToolConfig = {
   },
 };
 
+// Weather History Context is asdditional context provided to the assistant to help it understand more about the user's interactions with this specific service.
+export const weatherHistoryContext: ServiceContext = {
+  id: "weatherHistory",
+  name: "Weather Search History",
+  description: "User's previous weather searches",
+  getContextData: async (agentInfo) => {
+    const history = weatherSearchHistory[agentInfo.id] || [];
+    
+    if (history.length === 0) {
+      return "No previous weather searches found for this user.";
+    }
+
+    return `User has made ${history.length} weather searches. Recent searches:\n${JSON.stringify(history.slice(-5), null, 2)}`;
+  }
+};
+
+
+
+// Weather History Button will appear on the UI as a pinned button and will render a component that displays the weather search history similar to the cart button for the food service. 
+export const weatherHistoryButton: ServicePinnable = {
+  id: "weatherHistoryButton",
+  name: "Weather History",
+  description: "View your weather search history",
+  type: "button",
+  label: "History",
+  icon: "history",
+  getWidget: async (agentInfo) => {
+    const history = weatherSearchHistory[agentInfo.id] || [];
+
+    if (history.length === 0) {
+      return {
+        text: "No weather search history available.",
+        data: {},
+        ui: {
+          type: "p",
+          children: "You haven't made any weather searches yet.",
+        },
+      };
+    }
+
+    const tableData = {
+      columns: [
+        {
+          key: "timestamp",
+          header: "Time",
+          type: "text",
+          width: "25%"
+        },
+        {
+          key: "location",
+          header: "Location",
+          type: "text",
+          width: "25%"
+        },
+        {
+          key: "temperature",
+          header: "Temperature",
+          type: "text",
+          width: "25%"
+        },
+        {
+          key: "windSpeed",
+          header: "Wind Speed",
+          type: "text",
+          width: "25%"
+        }
+      ],
+      rows: history.map(search => ({
+        timestamp: new Date(search.timestamp).toLocaleString(),
+        location: `${search.latitude.toFixed(2)}, ${search.longitude.toFixed(2)}`,
+        temperature: `${search.temperature}°C`,
+        windSpeed: `${search.windSpeed} km/h`
+      }))
+    };
+
+    return {
+      text: `Weather search history: ${history.length} searches`,
+      data: history,
+      ui: {
+        type: "table",
+        uiData: JSON.stringify(tableData)
+      },
+    };
+  },
+};
+
 const dainService = defineDAINService({
   metadata: {
     title: "Weather DAIN Service",
@@ -112,6 +221,8 @@ const dainService = defineDAINService({
     apiKey: process.env.DAIN_API_KEY,
   },
   tools: [getWeatherConfig, getWeatherForecastConfig],
+  contexts: [weatherHistoryContext],
+  pinnables: [weatherHistoryButton]
 });
 
 dainService.startNode({ port: 2022 }).then(() => {
