@@ -2,6 +2,8 @@
 
 import { z } from "zod";
 import axios from "axios";
+import * as fs from "fs";
+import * as path from "path";
 
 import {
   defineDAINService,
@@ -13,14 +15,36 @@ import {
 import { ServiceContext } from "@dainprotocol/service-sdk/service";
 import { ServicePinnable } from "@dainprotocol/service-sdk/service";
 
-// Simple in-memory store for weather search history -- could use a database in the future to store the history
-const weatherSearchHistory: Record<string, Array<{
+// Store weather search history in a JSON file
+const HISTORY_FILE = path.join(__dirname, "weatherHistory.json");
+
+// Initialize history from file or create empty if doesn't exist
+let weatherSearchHistory: Record<string, Array<{
   timestamp: number,
   latitude: number,
   longitude: number,
   temperature: number,
   windSpeed: number
 }>> = {};
+
+try {
+  if (fs.existsSync(HISTORY_FILE)) {
+    weatherSearchHistory = JSON.parse(fs.readFileSync(HISTORY_FILE, 'utf8'));
+  } else {
+    fs.writeFileSync(HISTORY_FILE, JSON.stringify(weatherSearchHistory), 'utf8');
+  }
+} catch (error) {
+  console.error("Error initializing weather history file:", error);
+}
+
+// Helper function to save history to file
+const saveHistory = () => {
+  try {
+    fs.writeFileSync(HISTORY_FILE, JSON.stringify(weatherSearchHistory), 'utf8');
+  } catch (error) {
+    console.error("Error saving weather history:", error);
+  }
+};
 
 const getWeatherConfig: ToolConfig = {
   id: "get-weather",
@@ -61,6 +85,9 @@ const getWeatherConfig: ToolConfig = {
       temperature: temperature_2m,
       windSpeed: wind_speed_10m
     });
+    
+    // Save updated history to file
+    saveHistory();
 
     return {
       text: `The current temperature is ${temperature_2m}°C with wind speed of ${wind_speed_10m} km/h`,
@@ -121,7 +148,7 @@ const getWeatherForecastConfig: ToolConfig = {
   },
 };
 
-// Weather History Context is asdditional context provided to the assistant to help it understand more about the user's interactions with this specific service.
+// Weather History Context is asdditional context provided to the assistant to help it understand more about the user's interactions with this specific service. In this case, it's the weather search history.
 export const weatherHistoryContext: ServiceContext = {
   id: "weatherHistory",
   name: "Weather Search History",
